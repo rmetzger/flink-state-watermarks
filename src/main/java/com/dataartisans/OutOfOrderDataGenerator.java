@@ -27,6 +27,8 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer08;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.XORShiftRandom;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Random;
 
@@ -34,6 +36,7 @@ import java.util.Random;
  *
  */
 public class OutOfOrderDataGenerator {
+	private static final Logger LOG = LoggerFactory.getLogger(OutOfOrderDataGenerator.class);
 
 	public static void main(String[] args) throws Exception {
 		ParameterTool pt = ParameterTool.fromPropertiesFile(args[0]);
@@ -96,6 +99,7 @@ public class OutOfOrderDataGenerator {
 
 		@Override
 		public void cancel() {
+			LOG.info("Received cancel in EventGenerator");
 			running = false;
 		}
 	}
