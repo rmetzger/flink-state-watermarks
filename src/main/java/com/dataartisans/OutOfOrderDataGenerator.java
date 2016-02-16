@@ -56,7 +56,7 @@ public class OutOfOrderDataGenerator {
 	 */
 	private static class EventGenerator extends RichParallelSourceFunction<String> {
 		private final ParameterTool pt;
-		private boolean running = true;
+		private volatile boolean running = true;
 		private final long numKeys;
 		private final long eventsPerKey;
 	//	private final int timeVariance; // the max delay of the events
