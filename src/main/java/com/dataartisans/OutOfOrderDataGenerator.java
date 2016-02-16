@@ -41,12 +41,12 @@ public class OutOfOrderDataGenerator {
 		final StreamExecutionEnvironment see = StreamExecutionEnvironment.getExecutionEnvironment();
 		see.getConfig().setGlobalJobParameters(pt);
 
-		DataStream<String> events = see.addSource(new EventGenerator(pt), "Out of order data generator")
-				.setParallelism(pt.getInt("eventsKerPey"));
+		see.setParallelism(pt.getInt("eventsKerPey"));
+		DataStream<String> events = see.addSource(new EventGenerator(pt), "Out of order data generator");
 
 	//	events.print().setParallelism(1);
 		events.flatMap(new ThroughputLogger<String>(32, 100_000L));
-	//	events.addSink(new FlinkKafkaProducer08<>(pt.getRequired("topic"), new SimpleStringSchema(), pt.getProperties()));
+		events.addSink(new FlinkKafkaProducer08<>(pt.getRequired("topic"), new SimpleStringSchema(), pt.getProperties()));
 
 		see.execute("Data Generator: " + pt.getProperties());
 	}
@@ -83,9 +83,9 @@ public class OutOfOrderDataGenerator {
 						out.put("time", time + rnd.nextInt((int)timeSliceSize)); // distribute events within slice size
 						out.put("userId", key);
 						String o = out.toJSONString();
-						System.out.println( o);
+					//	System.out.println( o);
+					//	Thread.sleep(1000);
 						sourceContext.collect(o);
-						Thread.sleep(1000);
 					}
 				}
 				// advance base time
