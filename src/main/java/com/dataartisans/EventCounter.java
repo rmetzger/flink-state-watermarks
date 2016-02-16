@@ -32,6 +32,7 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -68,6 +69,12 @@ public class EventCounter {
 		see.getCheckpointConfig().setCheckpointInterval(30_000L);
 		see.getConfig().setRestartStrategy(RestartStrategies.noRestart());
 
+		if(pt.has("rocksdb")) {
+			see.setStateBackend(new RocksDBStateBackend(pt.get("rocksdb")));
+		}
+
+		see.setParallelism(1);
+
 		Properties kProps = pt.getProperties();
 		kProps.setProperty("group.id", UUID.randomUUID().toString());
 		DataStream<String> eventsAsStrings = see.addSource(new FlinkKafkaConsumer08<>(pt.getRequired("topic"), new SimpleStringSchema(), kProps));
@@ -81,8 +88,8 @@ public class EventCounter {
 		initial.put("count", 0L);
 		initial.put("firstTime", Long.MAX_VALUE);
 		initial.put("lastTime", 0L);
-	/*	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId"))
-				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt)); */
+	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId"))
+	//			.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
 		DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
 
 		// make sure for each tumbling window, we have the right number of users
@@ -117,6 +124,7 @@ public class EventCounter {
 			if(ts > maxTs) {
 				maxTs = ts;
 			}
+			System.out.println("ts = " + ts);
 			return ts;
 		}
 
@@ -127,8 +135,9 @@ public class EventCounter {
 
 		@Override
 		public long getCurrentWatermark() {
-			System.out.println("emitting watermark");
-			return maxTs - maxTimeVariance;
+			long wm = maxTs - maxTimeVariance;
+			System.out.println("emitting watermark: " + wm);
+			return wm;
 		}
 	}
 
@@ -141,7 +150,8 @@ public class EventCounter {
 
 		@Override
 		public Object getKey(JSONObject jsonObject) throws Exception {
-			return jsonObject.get(key);
+			Object k = jsonObject.get(key);
+			return k;
 		}
 	}
 
@@ -158,10 +168,16 @@ public class EventCounter {
 
 			long time = (long)value.get("time");
 
-			accumulator.put("count", cnt + 1);
-			accumulator.put("firstTime", Math.min(minAccu, time));
-			accumulator.put("lastTime", Math.max(maxAccu, time));
-			return accumulator;
+			System.out.println("cnt = " + cnt +" at " + value);
+			// return something new
+			JSONObject o = new JSONObject();
+			o.put("count", cnt + 1);
+			o.put("firstTime", Math.min(minAccu, time));
+			o.put("lastTime", Math.max(maxAccu, time));
+			if(cnt > 3 ){
+				throw new RuntimeException("Count to high " + cnt);
+			}
+			return o;
 		}
 	}
 
