@@ -88,9 +88,9 @@ public class EventCounter {
 		initial.put("count", 0L);
 		initial.put("firstTime", Long.MAX_VALUE);
 		initial.put("lastTime", 0L);
-	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId"))
-	//			.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
-		DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
+		DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId"))
+				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
+	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
 
 		// make sure for each tumbling window, we have the right number of users
 		countPerUser.timeWindowAll(Time.minutes(1)).apply(0L, new AllWindowCountAllFold(), new AllWindowCheckingWindow(pt));

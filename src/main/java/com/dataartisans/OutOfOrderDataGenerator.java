@@ -89,6 +89,9 @@ public class OutOfOrderDataGenerator {
 					//	System.out.println( o);
 					//	Thread.sleep(1000);
 						sourceContext.collect(o);
+						if(!running) {
+							return; // we are done
+						}
 					}
 				}
 				// advance base time
