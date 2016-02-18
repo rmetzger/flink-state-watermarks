@@ -45,6 +45,8 @@ import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer08;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -56,6 +58,8 @@ import java.util.UUID;
  *
  */
 public class EventCounter {
+
+	private static final Logger LOG = LoggerFactory.getLogger(EventCounter.class);
 
 
 	public static void main(String[] args) throws Exception {
@@ -73,7 +77,7 @@ public class EventCounter {
 			see.setStateBackend(new RocksDBStateBackend(pt.get("rocksdb")));
 		}
 
-		see.setParallelism(1);
+		see.setParallelism(pt.getInt("parallelism", 1));
 
 		Properties kProps = pt.getProperties();
 		kProps.setProperty("group.id", UUID.randomUUID().toString());
@@ -226,7 +230,7 @@ public class EventCounter {
 
 		@Override
 		public void apply(TimeWindow timeWindow, Long aLong, Collector<Long> collector) throws Exception {
-		//	System.out.println("Got number of keys " + aLong +" for time starting at " + timeWindow.getStart());
+			LOG.info("Got number of keys " + aLong +" for time starting at " + timeWindow.getStart());
 			if(aLong != pt.getLong("numKeys")) {
 				throw new RuntimeException("Number of keys is " + aLong);
 			}
