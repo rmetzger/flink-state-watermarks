@@ -84,7 +84,7 @@ public class EventCounter {
 
 		DataStream<JSONObject> events;
 		if(pt.has("generateInPlace")) {
-			events = see.addSource(new OutOfOrderDataGenerator.EventGenerator(pt), "Out of order data generator");
+			events = see.addSource(new OutOfOrderDataGenerator.EventGenerator(pt), "Out of order data generator").setParallelism(pt.getInt("genPar", 1));
 		} else {
 			DataStream<String> eventsAsStrings = see.addSource(new FlinkKafkaConsumer08<>(pt.getRequired("topic"), new SimpleStringSchema(), kProps));
 			events = eventsAsStrings.map(new ParseJson());
