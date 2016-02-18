@@ -77,11 +77,19 @@ public class EventCounter {
 
 		Properties kProps = pt.getProperties();
 		kProps.setProperty("group.id", UUID.randomUUID().toString());
-		DataStream<String> eventsAsStrings = see.addSource(new FlinkKafkaConsumer08<>(pt.getRequired("topic"), new SimpleStringSchema(), kProps));
-		eventsAsStrings.flatMap(new ThroughputLogger<String>(32, 100_000L));
-		DataStream<JSONObject> events = eventsAsStrings.map(new ParseJson());
 
-		events.assignTimestamps(new TSExtractor(pt));
+		DataStream<JSONObject> events;
+		if(pt.has("generateInPlace")) {
+			events = see.addSource(new OutOfOrderDataGenerator.EventGenerator(pt), "Out of order data generator");
+		} else {
+			DataStream<String> eventsAsStrings = see.addSource(new FlinkKafkaConsumer08<>(pt.getRequired("topic"), new SimpleStringSchema(), kProps));
+			events = eventsAsStrings.map(new ParseJson());
+		}
+
+		events.flatMap(new ThroughputLogger<JSONObject>(32, 200_000L));
+
+
+		events = events.assignTimestamps(new TSExtractor(pt));
 
 		// do a tumbling time window: make sure every userId (key) has exactly 3 elements
 		JSONObject initial = new JSONObject();
@@ -124,7 +132,6 @@ public class EventCounter {
 			if(ts > maxTs) {
 				maxTs = ts;
 			}
-			System.out.println("ts = " + ts);
 			return ts;
 		}
 
@@ -136,7 +143,6 @@ public class EventCounter {
 		@Override
 		public long getCurrentWatermark() {
 			long wm = maxTs - maxTimeVariance;
-			System.out.println("emitting watermark: " + wm);
 			return wm;
 		}
 	}
@@ -168,7 +174,6 @@ public class EventCounter {
 
 			long time = (long)value.get("time");
 
-			System.out.println("cnt = " + cnt +" at " + value);
 			// return something new
 			JSONObject o = new JSONObject();
 			o.put("count", cnt + 1);
@@ -182,30 +187,25 @@ public class EventCounter {
 	}
 
 	private static class PerKeyCheckingWindow implements WindowFunction<JSONObject, JSONObject, Object, TimeWindow> {
+		private final long expectedFinal;
 		private ParameterTool pt;
 
 		public PerKeyCheckingWindow(ParameterTool pt) {
 			this.pt = pt;
+			expectedFinal = pt.getLong("eventsKerPey") * pt.getLong("eventsPerKeyPerGenerator");
 		}
 
 		@Override
 		public void apply(Object userId, TimeWindow timeWindow, JSONObject finalAccu, Collector<JSONObject> collector) throws Exception {
 			long finalCount = (long) finalAccu.get("count");
-			long minVal = (long)finalAccu.get("firstTime");
-			long maxVal = (long)finalAccu.get("lastTime");
-			System.out.println("Got window for key "+userId+" with finalCount="+finalCount+" min="+minVal+" max="+maxVal);
+
+		//	System.out.println("Got window for key "+userId+" with finalCount="+finalCount);
 
 			// ensure we counted exactly 3 for the user id
-			if(finalCount != pt.getLong("eventsKerPey")) {
-				throw new RuntimeException("Final count is = " + finalCount);
-			}
-			if(timeWindow.getStart() != minVal) {
-				throw new RuntimeException("Start time wrong " + timeWindow.getStart() + ", " + minVal);
+			if(finalCount != expectedFinal) {
+				throw new RuntimeException("Final count is = " + finalCount + " expected " + expectedFinal);
 			}
 
-			if(timeWindow.getEnd() != maxVal) {
-				throw new RuntimeException("Start time wrong " + timeWindow.getEnd() + ", " + maxVal);
-			}
 			collector.collect(finalAccu);
 		}
 	}
@@ -226,7 +226,7 @@ public class EventCounter {
 
 		@Override
 		public void apply(TimeWindow timeWindow, Long aLong, Collector<Long> collector) throws Exception {
-			System.out.println("Got number of keys " + aLong +" for time starting at " + timeWindow.getStart());
+		//	System.out.println("Got number of keys " + aLong +" for time starting at " + timeWindow.getStart());
 			if(aLong != pt.getLong("numKeys")) {
 				throw new RuntimeException("Number of keys is " + aLong);
 			}

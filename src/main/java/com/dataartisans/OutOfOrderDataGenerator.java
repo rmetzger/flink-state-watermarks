@@ -45,11 +45,11 @@ public class OutOfOrderDataGenerator {
 		see.getConfig().setGlobalJobParameters(pt);
 
 		see.setParallelism(pt.getInt("eventsKerPey"));
-		DataStream<String> events = see.addSource(new EventGenerator(pt), "Out of order data generator");
+		DataStream<JSONObject> events = see.addSource(new EventGenerator(pt), "Out of order data generator");
 
 	//	events.print().setParallelism(1);
-		events.flatMap(new ThroughputLogger<String>(32, 100_000L));
-		events.addSink(new FlinkKafkaProducer08<>(pt.getRequired("topic"), new SimpleStringSchema(), pt.getProperties()));
+	//	events.flatMap(new ThroughputLogger<String>(32, 100_000L));
+	//	events.addSink(new FlinkKafkaProducer08<>(pt.getRequired("topic"), new SimpleStringSchema(), pt.getProperties()));
 
 		see.execute("Data Generator: " + pt.getProperties());
 	}
@@ -57,7 +57,7 @@ public class OutOfOrderDataGenerator {
 	/**
 	 * Generate E events per key
 	 */
-	private static class EventGenerator extends RichParallelSourceFunction<String> {
+	public static class EventGenerator extends RichParallelSourceFunction<JSONObject> {
 		private final ParameterTool pt;
 		private volatile boolean running = true;
 		private final long numKeys;
@@ -75,7 +75,7 @@ public class OutOfOrderDataGenerator {
 		}
 
 		@Override
-		public void run(SourceContext<String> sourceContext) throws Exception {
+		public void run(SourceContext<JSONObject> sourceContext) throws Exception {
 			rnd = new XORShiftRandom(getRuntimeContext().getIndexOfThisSubtask());
 			long time = 0;
 			while(running) {
@@ -85,10 +85,7 @@ public class OutOfOrderDataGenerator {
 					//	int tVar = rnd.nextInt(this.timeVariance);
 						out.put("time", time + rnd.nextInt((int)timeSliceSize)); // distribute events within slice size
 						out.put("userId", key);
-						String o = out.toJSONString();
-					//	System.out.println( o);
-					//	Thread.sleep(1000);
-						sourceContext.collect(o);
+						sourceContext.collect(out);
 						if(!running) {
 							return; // we are done
 						}
