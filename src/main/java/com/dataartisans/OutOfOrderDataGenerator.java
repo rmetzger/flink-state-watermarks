@@ -20,8 +20,12 @@ package com.dataartisans;
 
 import com.dataartisans.utils.ThroughputLogger;
 import net.minidev.json.JSONObject;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.checkpoint.Checkpointed;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
@@ -58,14 +62,15 @@ public class OutOfOrderDataGenerator {
 	/**
 	 * Generate E events per key
 	 */
-	public static class EventGenerator extends RichParallelSourceFunction<Tuple2<Long, Long>> {
+	public static class EventGenerator extends RichParallelSourceFunction<Tuple2<Long, Long>> implements Checkpointed<Long> {
 		private final ParameterTool pt;
+		private Long time = 0L;
 		private volatile boolean running = true;
 		private final long numKeys;
 		private final long eventsPerKey;
 	//	private final int timeVariance; // the max delay of the events
 		private final long timeSliceSize;
-		private  Random rnd;
+		private Random rnd;
 
 		public EventGenerator(ParameterTool pt) {
 			this.pt = pt;
@@ -76,24 +81,30 @@ public class OutOfOrderDataGenerator {
 		}
 
 		@Override
+		public void open(Configuration parameters) throws Exception {
+			super.open(parameters);
+		}
+
+		@Override
 		public void run(SourceContext<Tuple2<Long, Long>> sourceContext) throws Exception {
 			rnd = new XORShiftRandom(getRuntimeContext().getIndexOfThisSubtask());
-			long time = 0;
+
 			while(running) {
-				for(long key = 0; key < numKeys; key++) {
-					for(long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
-						final Tuple2<Long, Long> out = new Tuple2<>();
-					//	int tVar = rnd.nextInt(this.timeVariance);
-						out.f0 = time + rnd.nextInt((int)timeSliceSize); // distribute events within slice size
-						out.f1 = key;
-						sourceContext.collect(out);
-						if(!running) {
-							return; // we are done
+				synchronized (sourceContext.getCheckpointLock()) {
+					for (long key = 0; key < numKeys; key++) {
+						for (long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
+							final Tuple2<Long, Long> out = new Tuple2<>();
+							out.f0 = time + rnd.nextInt((int) timeSliceSize); // distribute events within slice size
+							out.f1 = key;
+							sourceContext.collect(out);
+							if (!running) {
+								return; // we are done
+							}
 						}
 					}
+					// advance base time
+					time += timeSliceSize;
 				}
-				// advance base time
-				time += timeSliceSize;
 			}
 			sourceContext.close();
 		}
@@ -102,6 +113,16 @@ public class OutOfOrderDataGenerator {
 		public void cancel() {
 			LOG.info("Received cancel in EventGenerator");
 			running = false;
+		}
+
+		@Override
+		public Long snapshotState(long checkpointId, long checkpointTimestamp) throws Exception {
+			return this.time;
+		}
+
+		@Override
+		public void restoreState(Long state) throws Exception {
+			this.time = state;
 		}
 	}
 }
