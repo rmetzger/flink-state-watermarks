@@ -20,6 +20,7 @@ package com.dataartisans;
 
 import com.dataartisans.utils.ThroughputLogger;
 import net.minidev.json.JSONObject;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -45,7 +46,7 @@ public class OutOfOrderDataGenerator {
 		see.getConfig().setGlobalJobParameters(pt);
 
 		see.setParallelism(pt.getInt("eventsKerPey"));
-		DataStream<JSONObject> events = see.addSource(new EventGenerator(pt), "Out of order data generator");
+		DataStream<Tuple2<Long, Long>> events = see.addSource(new EventGenerator(pt), "Out of order data generator");
 
 	//	events.print().setParallelism(1);
 	//	events.flatMap(new ThroughputLogger<String>(32, 100_000L));
@@ -57,7 +58,7 @@ public class OutOfOrderDataGenerator {
 	/**
 	 * Generate E events per key
 	 */
-	public static class EventGenerator extends RichParallelSourceFunction<JSONObject> {
+	public static class EventGenerator extends RichParallelSourceFunction<Tuple2<Long, Long>> {
 		private final ParameterTool pt;
 		private volatile boolean running = true;
 		private final long numKeys;
@@ -75,16 +76,16 @@ public class OutOfOrderDataGenerator {
 		}
 
 		@Override
-		public void run(SourceContext<JSONObject> sourceContext) throws Exception {
+		public void run(SourceContext<Tuple2<Long, Long>> sourceContext) throws Exception {
 			rnd = new XORShiftRandom(getRuntimeContext().getIndexOfThisSubtask());
 			long time = 0;
 			while(running) {
 				for(long key = 0; key < numKeys; key++) {
 					for(long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
-						final JSONObject out = new JSONObject();
+						final Tuple2<Long, Long> out = new Tuple2<>();
 					//	int tVar = rnd.nextInt(this.timeVariance);
-						out.put("time", time + rnd.nextInt((int)timeSliceSize)); // distribute events within slice size
-						out.put("userId", key);
+						out.f0 = time + rnd.nextInt((int)timeSliceSize); // distribute events within slice size
+						out.f1 = key;
 						sourceContext.collect(out);
 						if(!running) {
 							return; // we are done

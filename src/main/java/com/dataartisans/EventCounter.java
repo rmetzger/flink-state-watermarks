@@ -19,8 +19,6 @@ package com.dataartisans;
  */
 
 import com.dataartisans.utils.ThroughputLogger;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.FoldFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
@@ -29,6 +27,9 @@ import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
@@ -82,26 +83,24 @@ public class EventCounter {
 		Properties kProps = pt.getProperties();
 		kProps.setProperty("group.id", UUID.randomUUID().toString());
 
-		DataStream<JSONObject> events;
-		if(pt.has("generateInPlace")) {
-			events = see.addSource(new OutOfOrderDataGenerator.EventGenerator(pt), "Out of order data generator").setParallelism(pt.getInt("genPar", 1));
-		} else {
-			DataStream<String> eventsAsStrings = see.addSource(new FlinkKafkaConsumer08<>(pt.getRequired("topic"), new SimpleStringSchema(), kProps));
-			events = eventsAsStrings.map(new ParseJson());
-		}
+		DataStream<Tuple2<Long, Long>> events = see.addSource(new OutOfOrderDataGenerator.EventGenerator(pt), "Out of order data generator").setParallelism(pt.getInt("genPar", 1));;
 
-		events.flatMap(new ThroughputLogger<JSONObject>(32, 200_000L));
+		events.flatMap(new ThroughputLogger<Tuple2<Long, Long>>(8, 200_000L)).setParallelism(1);
 
 
 		events = events.assignTimestamps(new TSExtractor(pt));
 
 		// do a tumbling time window: make sure every userId (key) has exactly 3 elements
-		JSONObject initial = new JSONObject();
-		initial.put("count", 0L);
-		initial.put("firstTime", Long.MAX_VALUE);
-		initial.put("lastTime", 0L);
-		DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId"))
+		Tuple3<Long, Long, Long> initial = new Tuple3<>();
+		initial.f0 = 0L;
+		initial.f1= Long.MAX_VALUE;
+		initial.f2 = 0L;
+		DataStream<Tuple3<Long, Long, Long>> countPerUser = events.keyBy(1)
 				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
+
+
+		// apply(R initialValue, FoldFunction<T, R> foldFunction, WindowFunction<R, R, K, W> function)
+
 	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
 
 		// make sure for each tumbling window, we have the right number of users
@@ -110,19 +109,7 @@ public class EventCounter {
 		see.execute("Data Generator: " + pt.getProperties());
 	}
 
-	private static class ParseJson implements MapFunction<String, JSONObject> {
-		private transient JSONParser parser;
-
-		@Override
-		public JSONObject map(String s) throws Exception {
-			if(parser == null) {
-				parser = new JSONParser(JSONParser.MODE_JSON_SIMPLE);
-			}
-			return (JSONObject) parser.parse(s);
-		}
-	}
-
-	private static class TSExtractor implements TimestampExtractor<JSONObject> {
+	private static class TSExtractor implements TimestampExtractor<Tuple2<Long, Long>> {
 		private final long maxTimeVariance;
 		private long maxTs = 0;
 		public TSExtractor(ParameterTool pt) {
@@ -131,16 +118,15 @@ public class EventCounter {
 		}
 
 		@Override
-		public long extractTimestamp(JSONObject jsonObject, long l) {
-			long ts = (long) jsonObject.get("time");
-			if(ts > maxTs) {
-				maxTs = ts;
+		public long extractTimestamp(Tuple2<Long, Long> jsonObject, long l) {
+			if(jsonObject.f0 > maxTs) {
+				maxTs = jsonObject.f0;
 			}
-			return ts;
+			return jsonObject.f0;
 		}
 
 		@Override
-		public long extractWatermark(JSONObject jsonObject, long l) {
+		public long extractWatermark(Tuple2<Long, Long> jsonObject, long l) {
 			return Long.MIN_VALUE;
 		}
 
@@ -151,46 +137,27 @@ public class EventCounter {
 		}
 	}
 
-	private static class JsonKeySelector implements KeySelector<JSONObject, Object> {
-		private final String key;
-
-		public JsonKeySelector(String key) {
-			this.key = key;
-		}
-
-		@Override
-		public Object getKey(JSONObject jsonObject) throws Exception {
-			Object k = jsonObject.get(key);
-			return k;
-		}
-	}
 
 	/**
 	 * Count key frequency and keep track of min max time
 	 */
-	private static class CountingFold implements FoldFunction<JSONObject, JSONObject> {
+	private static class CountingFold implements FoldFunction<Tuple2<Long, Long>, Tuple3<Long, Long, Long>> {
 
 		@Override
-		public JSONObject fold(JSONObject accumulator, JSONObject value) throws Exception {
-			long cnt = (long)accumulator.get("count");
-			long minAccu = (long)accumulator.get("firstTime");
-			long maxAccu = (long)accumulator.get("lastTime");
+		public Tuple3<Long, Long, Long> fold(Tuple3<Long, Long, Long> accumulator, Tuple2<Long, Long> value) throws Exception {
+			long time = value.f0;
 
-			long time = (long)value.get("time");
-
-			// return something new
-			JSONObject o = new JSONObject();
-			o.put("count", cnt + 1);
-			o.put("firstTime", Math.min(minAccu, time));
-			o.put("lastTime", Math.max(maxAccu, time));
-			if(cnt > 3 ){
-				throw new RuntimeException("Count to high " + cnt);
+			accumulator.f0 = accumulator.f0 + 1;
+			accumulator.f1 = Math.min(accumulator.f1, time);
+			accumulator.f2 = Math.max(accumulator.f2, time);
+			if(accumulator.f0 > 3 ){
+				throw new RuntimeException("Count to high " + accumulator.f0);
 			}
-			return o;
+			return accumulator;
 		}
 	}
 
-	private static class PerKeyCheckingWindow implements WindowFunction<JSONObject, JSONObject, Object, TimeWindow> {
+	private static class PerKeyCheckingWindow implements WindowFunction<Tuple3<Long, Long, Long>, Tuple3<Long, Long, Long>, Tuple, TimeWindow> {
 		private final long expectedFinal;
 		private ParameterTool pt;
 
@@ -200,23 +167,22 @@ public class EventCounter {
 		}
 
 		@Override
-		public void apply(Object userId, TimeWindow timeWindow, JSONObject finalAccu, Collector<JSONObject> collector) throws Exception {
-			long finalCount = (long) finalAccu.get("count");
+		public void apply(Tuple userId, TimeWindow timeWindow, Tuple3<Long, Long, Long> finalAccu, Collector<Tuple3<Long, Long, Long>> collector) throws Exception {
 
 		//	System.out.println("Got window for key "+userId+" with finalCount="+finalCount);
 
 			// ensure we counted exactly 3 for the user id
-			if(finalCount != expectedFinal) {
-				throw new RuntimeException("Final count is = " + finalCount + " expected " + expectedFinal);
+			if(finalAccu.f0 != expectedFinal) {
+				throw new RuntimeException("Final count is = " + finalAccu.f0 + " expected " + expectedFinal);
 			}
 
 			collector.collect(finalAccu);
 		}
 	}
 
-	private static class AllWindowCountAllFold implements FoldFunction<JSONObject, Long> {
+	private static class AllWindowCountAllFold implements FoldFunction<Tuple3<Long, Long, Long>, Long> {
 		@Override
-		public Long fold(Long aLong, JSONObject o) throws Exception {
+		public Long fold(Long aLong, Tuple3<Long, Long, Long> o) throws Exception {
 			return aLong + 1;
 		}
 	}
@@ -237,7 +203,7 @@ public class EventCounter {
 		}
 	}
 
-	private static class CustomWindow extends RichFlatMapFunction<JSONObject, JSONObject> {
+	/*private static class CustomWindow extends RichFlatMapFunction<JSONObject, JSONObject> {
 
 		private final long maxTimeVariance;
 		private final ParameterTool pt;
@@ -301,5 +267,5 @@ public class EventCounter {
 			// update state
 			state.update(map);
 		}
-	}
+	} */
 }
