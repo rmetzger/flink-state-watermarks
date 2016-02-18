@@ -72,7 +72,7 @@ public class EventCounter {
 		see.getConfig().setAutoWatermarkInterval(8_000L);
 		see.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 		see.getCheckpointConfig().setCheckpointInterval(30_000L);
-		see.getConfig().setRestartStrategy(RestartStrategies.noRestart());
+		see.getConfig().setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 3000));
 
 		if(pt.has("rocksdb")) {
 			see.setStateBackend(new RocksDBStateBackend(pt.get("rocksdb")));
@@ -98,8 +98,6 @@ public class EventCounter {
 		DataStream<Tuple3<Long, Long, Long>> countPerUser = events.keyBy(1)
 				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
 
-
-		// apply(R initialValue, FoldFunction<T, R> foldFunction, WindowFunction<R, R, K, W> function)
 
 	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
 
