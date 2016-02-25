@@ -56,9 +56,13 @@ public class OutOfOrderDataGenerator {
 	/**
 	 * Generate E events per key
 	 */
-	public static class EventGenerator extends RichParallelSourceFunction<Tuple2<Long, Long>> implements Checkpointed<Long> {
+	public static class EventGenerator extends RichParallelSourceFunction<Tuple2<Long, Long>> implements Checkpointed<Tuple2<Long,Long>> {
 		private final ParameterTool pt;
+
+		//checkpointed
 		private Long time = 0L;
+		private Long key = 0L;
+
 		private volatile boolean running = true;
 		private final long numKeys;
 		private final long eventsPerKey;
@@ -84,20 +88,20 @@ public class OutOfOrderDataGenerator {
 			rnd = new XORShiftRandom(getRuntimeContext().getIndexOfThisSubtask());
 
 			while(running) {
-				synchronized (sourceContext.getCheckpointLock()) {
-					for (long key = 0; key < numKeys; key++) {
-						for (long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
-							final Tuple2<Long, Long> out = new Tuple2<>();
-							out.f0 = time + rnd.nextInt((int) timeSliceSize); // distribute events within slice size
-							out.f1 = key;
-							sourceContext.collect(out);
-							if (!running) {
-								return; // we are done
-							}
+				for (key = 0L; key < numKeys; key++) {
+					synchronized (sourceContext.getCheckpointLock()) {
+					for (long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
+						final Tuple2<Long, Long> out = new Tuple2<>();
+						out.f0 = time + rnd.nextInt((int) timeSliceSize); // distribute events within slice size
+						out.f1 = key;
+						sourceContext.collect(out);
+						if (!running) {
+							return; // we are done
 						}
 					}
-					// advance base time
-					time += timeSliceSize;
+				}
+				// advance base time
+				time += timeSliceSize;
 				}
 			}
 			sourceContext.close();
@@ -110,13 +114,14 @@ public class OutOfOrderDataGenerator {
 		}
 
 		@Override
-		public Long snapshotState(long checkpointId, long checkpointTimestamp) throws Exception {
-			return this.time;
+		public Tuple2<Long, Long> snapshotState(long checkpointId, long checkpointTimestamp) throws Exception {
+			return new Tuple2<>(this.time, this.key);
 		}
 
 		@Override
-		public void restoreState(Long state) throws Exception {
-			this.time = state;
+		public void restoreState(Tuple2<Long, Long> state) throws Exception {
+			this.time = state.f0;
+			this.key = state.f1;
 		}
 	}
 }
