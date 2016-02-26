@@ -79,6 +79,26 @@ under the License.
 
 	<build>
 		<plugins>
+			<plugin>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<executions>
+					<execution>
+						<phase>generate-resources</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<tasks>
+								<echo>${line.separator}
+									${line.separator}Please use the "-Pbuild-jar" profile for creating a fat-jar.
+									${line.separator}${line.separator}${line.separator}</echo>
+							</tasks>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+
 			<!-- We use the maven-shade plugin to create a fat jar that contains all dependencies
 			except flink and it's transitive dependencies. The resulting fat-jar can be executed
 			on a cluster. Change the value of Program-Class if your program entry point changes. -->

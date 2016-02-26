@@ -86,13 +86,10 @@ public class EventCounter {
 		DataStream<Tuple3<Long, Long, Long>> countPerUser = events.keyBy(1)
 				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
 
-
-	//	DataStream<JSONObject> countPerUser = events.keyBy(new JsonKeySelector("userId")).flatMap(new CustomWindow(pt));
-
 		// make sure for each tumbling window, we have the right number of users
 		countPerUser.timeWindowAll(Time.minutes(1)).apply(0L, new AllWindowCountAllFold(), new AllWindowCheckingWindow(pt));
 
-		see.execute("Data Generator: " + pt.getProperties());
+		see.execute("Event counter: " + pt.getProperties());
 	}
 
 	private static class TSExtractor implements AssignerWithPeriodicWatermarks<Tuple2<Long, Long>> {
@@ -100,7 +97,6 @@ public class EventCounter {
 		private long maxTs = 0;
 		public TSExtractor(ParameterTool pt) {
 			this.maxTimeVariance = pt.getLong("timeSliceSize");
-
 		}
 
 		@Override
@@ -110,7 +106,6 @@ public class EventCounter {
 			}
 			return jsonObject.f0;
 		}
-
 
 		@Override
 		public Watermark getCurrentWatermark() {
@@ -139,23 +134,17 @@ public class EventCounter {
 
 	private static class PerKeyCheckingWindow implements WindowFunction<Tuple3<Long, Long, Long>, Tuple3<Long, Long, Long>, Tuple, TimeWindow> {
 		private final long expectedFinal;
-		private ParameterTool pt;
 
 		public PerKeyCheckingWindow(ParameterTool pt) {
-			this.pt = pt;
 			expectedFinal = pt.getLong("eventsKerPey") * pt.getLong("eventsPerKeyPerGenerator") * pt.getLong("genPar");
 		}
 
 		@Override
 		public void apply(Tuple userId, TimeWindow timeWindow, Tuple3<Long, Long, Long> finalAccu, Collector<Tuple3<Long, Long, Long>> collector) throws Exception {
-
-		//	System.out.println("Got window for key "+userId+" with finalCount="+finalCount);
-
 			// ensure we counted exactly 3 for the user id
 			if(finalAccu.f0 != expectedFinal) {
 				throw new RuntimeException("Final count is = " + finalAccu.f0 + " expected " + expectedFinal);
 			}
-
 			collector.collect(finalAccu);
 		}
 	}
@@ -182,5 +171,4 @@ public class EventCounter {
 			}
 		}
 	}
-
 }

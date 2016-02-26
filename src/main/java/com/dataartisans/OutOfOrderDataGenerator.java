@@ -88,21 +88,27 @@ public class OutOfOrderDataGenerator {
 			rnd = new XORShiftRandom(getRuntimeContext().getIndexOfThisSubtask());
 
 			while(running) {
-				for (key = 0L; key < numKeys; key++) {
+				while(true) {
+				//for (key = 0L; key < numKeys; key++) {
 					synchronized (sourceContext.getCheckpointLock()) {
-					for (long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
-						final Tuple2<Long, Long> out = new Tuple2<>();
-						out.f0 = time + rnd.nextInt((int) timeSliceSize); // distribute events within slice size
-						out.f1 = key;
-						sourceContext.collect(out);
-						if (!running) {
-							return; // we are done
+						for (long eventPerKey = 0; eventPerKey < eventsPerKey; eventPerKey++) {
+							final Tuple2<Long, Long> out = new Tuple2<>();
+							out.f0 = time + rnd.nextInt((int) timeSliceSize); // distribute events within slice size
+							out.f1 = key;
+				//			 System.out.println("Outputting key " + key + " for time " + time);
+							sourceContext.collect(out);
+							if (!running) {
+								return; // we are done
+							}
 						}
+					}
+					if(++key >= numKeys) {
+						key = 0L;
+						break;
 					}
 				}
 				// advance base time
 				time += timeSliceSize;
-				}
 			}
 			sourceContext.close();
 		}
