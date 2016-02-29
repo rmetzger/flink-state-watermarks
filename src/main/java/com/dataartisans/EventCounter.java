@@ -141,12 +141,13 @@ public class EventCounter {
 		}
 
 		@Override
-		public void apply(Tuple userId, TimeWindow timeWindow, Tuple3<Long, Long, Long> finalAccu, Collector<Tuple3<Long, Long, Long>> collector) throws Exception {
+		public void apply(Tuple userId, TimeWindow timeWindow, Iterable<Tuple3<Long, Long, Long>> finalAccu, Collector<Tuple3<Long, Long, Long>> collector) throws Exception {
 			// ensure we counted exactly 3 for the user id
-			if(finalAccu.f0 != expectedFinal) {
-				throw new RuntimeException("Final count is = " + finalAccu.f0 + " expected " + expectedFinal);
+			Tuple3<Long, Long, Long> fa = finalAccu.iterator().next();
+			if(fa.f0 != expectedFinal) {
+				throw new RuntimeException("Final count is = " + fa.f0 + " expected " + expectedFinal);
 			}
-			collector.collect(finalAccu);
+			collector.collect(fa);
 		}
 	}
 
@@ -165,9 +166,10 @@ public class EventCounter {
 		}
 
 		@Override
-		public void apply(TimeWindow timeWindow, Long aLong, Collector<Long> collector) throws Exception {
+		public void apply(TimeWindow timeWindow, Iterable<Long> aLong, Collector<Long> collector) throws Exception {
+			long l = aLong.iterator().next();
 			LOG.info("Got number of keys " + aLong +" for time starting at " + timeWindow.getStart());
-			if(aLong != pt.getLong("numKeys")) {
+			if(l != pt.getLong("numKeys")) {
 				throw new RuntimeException("Number of keys is " + aLong);
 			}
 		}
