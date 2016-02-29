@@ -59,6 +59,7 @@ public class EventCounter {
 		see.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 		see.getConfig().setAutoWatermarkInterval(8_000L);
 		see.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+		see.getCheckpointConfig().setCheckpointTimeout(60_000L * 60); // one hour checkpoints ;)
 		see.getCheckpointConfig().setCheckpointInterval(pt.getLong("checkpointInterval", 60_000L));
 		see.getConfig().setRestartStrategy(RestartStrategies.fixedDelayRestart(Integer.MAX_VALUE, 3000));
 
