@@ -88,7 +88,7 @@ public class EventCounter {
 				.timeWindow(Time.minutes(1)).apply(initial, new CountingFold(), new PerKeyCheckingWindow(pt));
 
 		// make sure for each tumbling window, we have the right number of users
-		countPerUser.timeWindowAll(Time.minutes(1)).apply(0L, new AllWindowCountAllFold(), new AllWindowCheckingWindow(pt));
+	//	countPerUser.timeWindowAll(Time.minutes(1)).apply(0L, new AllWindowCountAllFold(), new AllWindowCheckingWindow(pt));
 
 		see.execute("Event counter: " + pt.getProperties());
 	}
